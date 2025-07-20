@@ -1,0 +1,14 @@
+from pyspark.sql.functions import input_file_name, regexp_extract, to_date
+
+cust_path = base_path + "CUST_MSTR/*.csv"
+
+cust_df = (
+    spark.read.option("header", True).csv(cust_path)
+    .withColumn("filename", input_file_name())
+    .withColumn("DateStr", regexp_extract("filename", r"CUST_MSTR_(\d{8})\.csv", 1))
+    .withColumn("Date", to_date("DateStr", "yyyyMMdd"))
+    .drop("DateStr", "filename")
+)
+
+spark.sql("TRUNCATE TABLE CUST_MSTR")
+cust_df.write.format("delta").mode("append").saveAsTable("CUST_MSTR")

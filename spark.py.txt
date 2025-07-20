@@ -1,0 +1,56 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import input_file_name, regexp_extract, to_date
+
+# Initialize Spark session
+spark = SparkSession.builder.appName("DailyFileLoader").getOrCreate()
+
+# Base path to your data lake container
+# 🔁 Replace <container-name> and <storage-account-name> accordingly
+base_path = "abfss://<container-name>@<storage-account-name>.dfs.core.windows.net/raw-data/"
+
+# ========================
+# 1️⃣ CUST_MSTR Files
+# ========================
+cust_path = base_path + "CUST_MSTR/*.csv"
+
+cust_df = (
+    spark.read.option("header", True).csv(cust_path)
+    .withColumn("filename", input_file_name())
+    .withColumn("DateStr", regexp_extract("filename", r"CUST_MSTR_(\d{8})\.csv", 1))
+    .withColumn("Date", to_date("DateStr", "yyyyMMdd"))
+    .drop("DateStr", "filename")
+)
+
+# Truncate & load into CUST_MSTR Delta Table
+spark.sql("TRUNCATE TABLE CUST_MSTR")
+cust_df.write.format("delta").mode("append").saveAsTable("CUST_MSTR")
+
+
+# ========================
+# 2️⃣ master_child_export Files
+# ========================
+child_path = base_path + "master_child_export/*.csv"
+
+child_df = (
+    spark.read.option("header", True).csv(child_path)
+    .withColumn("filename", input_file_name())
+    .withColumn("DateKey", regexp_extract("filename", r"master_child_export-(\d{8})\.csv", 1))
+    .withColumn("Date", to_date("DateKey", "yyyyMMdd"))
+    .drop("filename")
+)
+
+# Truncate & load into master_child Delta Table
+spark.sql("TRUNCATE TABLE master_child")
+child_df.write.format("delta").mode("append").saveAsTable("master_child")
+
+
+# ========================
+# 3️⃣ H_ECOM_ORDER Files
+# ========================
+order_path = base_path + "H_ECOM_ORDER/*.csv"
+
+order_df = spark.read.option("header", True).csv(order_path)
+
+# Truncate & load into H_ECOM_Orders Delta Table
+spark.sql("TRUNCATE TABLE H_ECOM_Orders")
+order_df.write.format("delta").mode("append").saveAsTable("H_ECOM_Orders")
